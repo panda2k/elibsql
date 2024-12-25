@@ -1,8 +1,8 @@
-defmodule ElibsqlTest do
+defmodule ElibSQLTest do
   use ExUnit.Case
-  doctest Elibsql
+  doctest ElibSQL
 
   test "greets the world" do
-    assert Elibsql.hello() == :world
+    assert ElibSQL.hello() == :world
   end
 end

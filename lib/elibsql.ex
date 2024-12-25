@@ -1,6 +1,6 @@
-defmodule Elibsql do
+defmodule ElibSQL do
   @moduledoc """
-  Documentation for `Elibsql`.
+  Documentation for `ElibSQL`.
   """
 
   @doc """
