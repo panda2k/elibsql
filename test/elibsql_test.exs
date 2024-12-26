@@ -5,4 +5,8 @@ defmodule ElibSQLTest do
   test "greets the world" do
     assert ElibSQL.hello() == :world
   end
+
+  test "parses correct http websocket upgrade" do
+    ElibSQL.Protocol.parse()
+  end
 end
