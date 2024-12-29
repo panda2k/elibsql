@@ -24,7 +24,7 @@ defmodule ElibSQL.MixProject do
     [
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:db_connection, "~> 2.7.0"},
-      {:dotenvy, "~> 0.9.0"}
+      {:dotenvy, "~> 0.9.0", only: :test}
     ]
   end
 
