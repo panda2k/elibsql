@@ -27,9 +27,9 @@ defmodule ElibSQL.Protocol do
          {:ok, frame_back} <- :ssl.recv(state.sock, 0, timeout),
          {:ok, 101, headers} <- frame_back |> parse_http,
          true <- Map.get(headers, "sec-websocket-accept", "") |> valid_websocket?(socket_key),
-         "websocket" <- Map.get(headers, "upgrade", "") |> String.downcase,
-         "upgrade" <- Map.get(headers, "connection", "") |> String.downcase
-         do {:ok}
+         "websocket" <- Map.get(headers, "upgrade", "") |> String.downcase(),
+         "upgrade" <- Map.get(headers, "connection", "") |> String.downcase() do
+      {:ok}
     else
       x -> {:error, x}
     end
@@ -51,36 +51,44 @@ defmodule ElibSQL.Protocol do
 
     :ssl.send(state.sock, frame)
     {:ok, frame_back} = :ssl.recv(state.sock, 0, timeout)
-    true = frame_back |> parse_websocket_frame() |> :json.decode() |> Map.get("type", "") |> String.equivalent?("hello_ok")
+
+    true =
+      frame_back
+      |> parse_websocket_frame()
+      |> :json.decode()
+      |> Map.get("type", "")
+      |> String.equivalent?("hello_ok")
   end
 
   defp handshake(token, hostname, port, timeout, state) do
     with {:ok} <- upgrade_connection(hostname, port, timeout, state),
-      {:ok} <- authenticate(token, timeout, state)
-    do 
+         {:ok} <- authenticate(token, timeout, state) do
       {:ok}
     end
   end
 
   def valid_websocket?(websocket_accept_header, key) do
-    :crypto.hash(:sha, (key <> "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")) |> Base.encode64() |> String.equivalent?(websocket_accept_header)
+    :crypto.hash(:sha, key <> "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    |> Base.encode64()
+    |> String.equivalent?(websocket_accept_header)
   end
 
   @doc false
   def parse_http(response_bit_string) do
     with <<"HTTP/1.1 ", status_code::binary-size(3), rest::binary>> <- response_bit_string,
-      { status_code, _ } when status_code >= 100 and status_code <= 599 <- Integer.parse(status_code),
-      header_dict <- rest
-      |> String.split("\r\n")
-      |> Enum.drop(1)
-      |> Enum.reduce_while(%{}, fn x, acc ->
-        case String.split(x, ":", parts: 2) do
-          [""] -> {:halt, acc}
-          [key, value] -> {:cont, Map.put(acc, String.downcase(key), String.trim(value))}
-          _ -> {:halt, acc}
-        end
-      end)
-    do
+         {status_code, _} when status_code >= 100 and status_code <= 599 <-
+           Integer.parse(status_code),
+         header_dict <-
+           rest
+           |> String.split("\r\n")
+           |> Enum.drop(1)
+           |> Enum.reduce_while(%{}, fn x, acc ->
+             case String.split(x, ":", parts: 2) do
+               [""] -> {:halt, acc}
+               [key, value] -> {:cont, Map.put(acc, String.downcase(key), String.trim(value))}
+               _ -> {:halt, acc}
+             end
+           end) do
       {:ok, status_code, header_dict}
     else
       {num, _} when is_number(num) -> {:error, "found invalid status code #{num}"}
