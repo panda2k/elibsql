@@ -1,0 +1,76 @@
+name: "Create Turso Database"
+
+description: "Automatically create a Turso database"
+
+inputs:
+  organization_name:
+    description: "The name of the organization or account where this action will be performed."
+    required: true
+  api_token:
+    description: "The API key that has access to the organization or account."
+    required: true
+  group_name:
+    description: "The group name the database should be created in."
+    required: false
+
+outputs:
+  hostname:
+    description: "The database hostname without protocol."
+    value: ${{ steps.create-database.outputs.hostname }}
+  token:
+    description: "The database token"
+    value: ${{ steps.create-token.outputs.token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create Database
+      id: create-database
+      shell: bash
+      run: |
+        DATABASE_NAME=$(echo "${{ github.ref_name }}" |  sed 's|/|-|g')
+        RESPONSE=$(curl -s -f -X POST \
+          -H "Authorization: Bearer ${{ inputs.api_token }}" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "'$DATABASE_NAME'", "group": "${{ inputs.group_name }}" }' \
+          "https://api.turso.tech/v1/organizations/${{ inputs.organization_name }}/databases")
+
+        if [ $? -ne 0 ]; then
+          echo "Could not create database"
+          exit 1
+        fi
+
+        HOSTNAME=$(echo $RESPONSE | jq -r '.database.Hostname')
+        if [ -z "$HOSTNAME" ]; then
+          echo "Hostname not found in response"
+          exit 1
+        fi
+
+        echo "hostname=$HOSTNAME" >> $GITHUB_OUTPUT
+    - name: Create Token 
+      id: create-token
+      shell: bash
+      run: |
+        DATABASE_NAME=$(echo "${{ github.ref_name }}" |  sed 's|/|-|g')
+        if [ -z "${{ inputs.group_name }}" ]; then
+          GROUP_TO_USE=$GROUP_NAME
+        else
+          GROUP_TO_USE="${{ inputs.group_name }}"
+        fi
+
+        RESPONSE=$(curl -s -f -X POST \
+          -H "Authorization: Bearer ${{ inputs.api_token }}" \
+          "https://api.turso.tech/v1/organizations/${{ inputs.organization_name }}/databases/$DATABASE_NAME/auth/tokens?expiration=2w&authorization=full-access")
+
+        if [ $? -ne 0 ]; then
+          echo "Could not create database"
+          exit 1
+        fi
+
+        TOKEN=$(echo $RESPONSE | jq -r '.jwt')
+        if [ -z "$TOKEN" ]; then
+          echo "Token not found in response"
+          exit 1
+        fi
+
+        echo "token=$TOKEN" >> $GITHUB_OUTPUT

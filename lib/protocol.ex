@@ -56,6 +56,7 @@ defmodule ElibSQL.Protocol do
       |> :json.decode()
       |> Map.get("type", "")
       |> String.equivalent?("hello_ok")
+
     {:ok}
   end
 

@@ -1,0 +1,43 @@
+name: ci
+
+on: [push]
+
+jobs: 
+  lint:
+    runs-on: ubuntu-latest 
+    steps: 
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix build
+      - run: nix flake check
+      - run: mix format --check-formatted
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix build
+      - run: nix flake check
+      - name: create database
+        id: create-database
+        uses: ./.github/actions/create-database
+        with:
+          organization_name: ${{ secrets.TURSO_ORGANIZATION_NAME }}
+          group_name: ${{ secrets.TURSO_GROUP_NAME }}
+          api_token: ${{ secrets.TURSO_API_TOKEN }}
+      - name: run tests
+        run: mix test
+        env:
+          hostname: ${{ steps.create-database.outputs.hostname }}
+          token: ${{ steps.create-database.outputs.token }}
+      - name: delete database
+        if: always()
+        uses: ./.github/actions/delete-database
+        with:
+          organization_name: ${{ secrets.TURSO_ORGANIZATION_NAME }}
+          api_token: ${{ secrets.TURSO_API_TOKEN }}
+
