@@ -13,35 +13,52 @@ defmodule ElibSQL.Protocol do
 
     case :ssl.connect(hostname, port, sock_opts) do
       {:ok, sock} -> handshake(token, hostname, port, timeout, %__MODULE__{sock: sock})
-      {:error, sock} -> {:error, "failed to open tcp"}
+      {:error, _} -> {:error, "failed to open ssl tcp connection"}
     end
   end
 
   defp upgrade_connection(hostname, port, timeout, state) do
     socket_key = :crypto.strong_rand_bytes(16) |> Base.encode64()
 
-    handshake =
+    upgrade_request =
       "GET / HTTP/1.1\r\nHost: #{hostname}:#{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: #{socket_key}\r\nSec-WebSocket-Protocol: hrana3\r\nSec-WebSocket-Version: 13\r\n\r\n"
 
-    with :ok <- :ssl.send(state.sock, handshake),
-         {:ok, frame_back} = :ssl.recv(state.sock, 0),
+    with :ok <- :ssl.send(state.sock, upgrade_request),
+         {:ok, frame_back} <- :ssl.recv(state.sock, 0, timeout),
          {:ok, 101, headers} <- frame_back |> parse_http,
-         true = Map.get(headers, "sec-websocket-accept", "") |> valid_websocket?(socket_key),
-         "websocket" = Map.get(headers, "upgrade", "") |> String.downcase,
-         "upgrade" = Map.get(headers, "connection", "") |> String.downcase
+         true <- Map.get(headers, "sec-websocket-accept", "") |> valid_websocket?(socket_key),
+         "websocket" <- Map.get(headers, "upgrade", "") |> String.downcase,
+         "upgrade" <- Map.get(headers, "connection", "") |> String.downcase
          do {:ok}
     else
       x -> {:error, x}
     end
   end
 
+  defp authenticate(token, timeout, state) do
+    hello =
+      %{
+        "type" => "hello",
+        "jwt" => token
+      }
+      |> :json.encode()
+      |> IO.iodata_to_binary()
+
+    # create the binary frame for the hello message
+    # fin bit -> RSVs -> opcode -> masking bit -> 7 + 16 or 64 bits if needed -> mask key -> masked data
+    frame =
+      <<1::1, 0::3, 1::4, 1::1, payload_length(hello)::bitstring, mask_data(hello)::bitstring>>
+
+    :ssl.send(state.sock, frame)
+    {:ok, frame_back} = :ssl.recv(state.sock, 0, timeout)
+    true = frame_back |> parse_websocket_frame() |> :json.decode() |> Map.get("type", "") |> String.equivalent?("hello_ok")
+  end
+
   defp handshake(token, hostname, port, timeout, state) do
-    with {:ok} <- upgrade_connection(hostname, port, timeout, state)
-        #  {:ok, frame_back} <- :ssl.recv(state.sock, 0),
-        #  decoded_frame = frame_back |> parse_message do
-        do {:ok}
-        else
-          {:error, x} -> {:error, x}
+    with {:ok} <- upgrade_connection(hostname, port, timeout, state),
+      {:ok} <- authenticate(token, timeout, state)
+    do 
+      {:ok}
     end
   end
 
@@ -51,33 +68,27 @@ defmodule ElibSQL.Protocol do
 
   @doc false
   def parse_http(response_bit_string) do
-    case response_bit_string do
-      <<"HTTP/1.1 ", status_code::binary-size(3), rest::binary>> ->
-        case Integer.parse(status_code) do
-          {status_code, _} when status_code >= 100 and status_code <= 599 ->
-            header_dict =
-              rest
-              |> String.split("\r\n")
-              |> Enum.drop(1)
-              |> Enum.reduce_while(%{}, fn x, acc ->
-                case String.split(x, ":", parts: 2) do
-                  [""] -> {:halt, acc}
-                  [key, value] -> {:cont, Map.put(acc, String.downcase(key), String.trim(value))}
-                  _ -> {:halt, acc}
-                end
-              end)
-
-            {:ok, status_code, header_dict}
-
-          err -> {:error, err}
+    with <<"HTTP/1.1 ", status_code::binary-size(3), rest::binary>> <- response_bit_string,
+      { status_code, _ } when status_code >= 100 and status_code <= 599 <- Integer.parse(status_code),
+      header_dict <- rest
+      |> String.split("\r\n")
+      |> Enum.drop(1)
+      |> Enum.reduce_while(%{}, fn x, acc ->
+        case String.split(x, ":", parts: 2) do
+          [""] -> {:halt, acc}
+          [key, value] -> {:cont, Map.put(acc, String.downcase(key), String.trim(value))}
+          _ -> {:halt, acc}
         end
-
-      err ->
-        {:error, err}
+      end)
+    do
+      {:ok, status_code, header_dict}
+    else
+      {num, _} when is_number(num) -> {:error, "found invalid status code #{num}"}
+      err -> {:error, err}
     end
   end
 
-  def parse_message(message) do
+  def parse_websocket_frame(message) do
     <<_, second_byte, rest::binary>> = message
 
     case second_byte do
@@ -95,5 +106,34 @@ defmodule ElibSQL.Protocol do
       _ ->
         raise("Invalid response")
     end
+  end
+
+  defp payload_length(data) do
+    # final frame of message, rsvs to 0,
+    small_size = 2 ** 7 - 3
+    medium_size = 2 ** 16 - 1
+    big_size = 2 ** 64 - 1
+
+    case byte_size(data) do
+      len when len <= small_size -> <<len::7>>
+      len when len <= medium_size -> <<126::7, len::16>>
+      len when len <= big_size -> <<127::7, len::64>>
+      _ -> raise("Data way too big")
+    end
+  end
+
+  defp mask_data(data) do
+    masking_key = :crypto.strong_rand_bytes(4)
+
+    masked_data =
+      [
+        data |> :binary.bin_to_list(),
+        masking_key |> :binary.bin_to_list() |> Stream.cycle()
+      ]
+      |> Enum.zip()
+      |> Enum.map(fn {data_byte, mask_byte} -> Bitwise.bxor(data_byte, mask_byte) end)
+      |> :binary.list_to_bin()
+
+    <<masking_key::binary, masked_data::binary>>
   end
 end

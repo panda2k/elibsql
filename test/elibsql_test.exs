@@ -2,21 +2,17 @@ defmodule ElibSQLTest do
   use ExUnit.Case
   doctest ElibSQL
 
-  test "greets the world" do
-    assert ElibSQL.hello() == :world
-  end
-
-  test "parses correct http websocket upgrade" do
+  test "parses invalid HTTP response into error" do
     result = "HTTP/1.1 99 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
     |> ElibSQL.Protocol.parse_http()
-    assert result == {:error}
+    assert result == {:error, "found invalid status code 99"}
   end
 
-  test "parse expected HTTP response, parse response code + header" do
+  test "parses valid HTTP response" do
     result = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
     |> ElibSQL.Protocol.parse_http()
 
-    assert result == {:ok, 101, %{"Upgrade"=>"websocket", "Connection"=>"Upgrade", "Sec-WebSocket-Accept"=>"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}}
+    assert result == {:ok, 101, %{"upgrade"=>"websocket", "connection"=>"Upgrade", "sec-websocket-accept"=>"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}}
   end
 
   test "upgrade socket connection" do
@@ -29,8 +25,5 @@ defmodule ElibSQLTest do
 
     result = ElibSQL.Protocol.connect([hostname: hostname, token: token, timeout: timeout, port: port])
     assert result == {:ok}
-    # result = upgrade_connection(hostname, 443, 0, )
-    # defp upgrade_connection(hostname, port, timeout, state) do
-
   end
 end
