@@ -24,10 +24,14 @@ defmodule ElibSQL.Protocol do
     with :ok <- :ssl.send(state.sock, upgrade_request),
          {:ok, frame_back} <- :ssl.recv(state.sock, 0, timeout),
          {:ok, 101, headers} <- frame_back |> parse_http,
-         true <- Map.get(headers, "sec-websocket-accept", "") |> valid_websocket?(socket_key),
-         "websocket" <- Map.get(headers, "upgrade", "") |> String.downcase(),
-         "upgrade" <- Map.get(headers, "connection", "") |> String.downcase() do
-      {:ok}
+         true <-
+           Map.get(headers, "sec-websocket-accept", "") |> valid_websocket_accept?(socket_key) ||
+             :error_invalid_accept,
+         "websocket" <-
+           Map.get(headers, "upgrade", "") |> String.downcase() || :error_invalid_upgrade,
+         "upgrade" <-
+           Map.get(headers, "connection", "") |> String.downcase() || :error_invalid_connection do
+      {:ok, state}
     else
       x -> {:error, x}
     end
@@ -55,19 +59,20 @@ defmodule ElibSQL.Protocol do
       |> parse_websocket_frame()
       |> :json.decode()
       |> Map.get("type", "")
-      |> String.equivalent?("hello_ok")
+      |> String.equivalent?("hello_ok") ||
+        :invalid_hello_response
 
-    {:ok}
+    {:ok, state}
   end
 
   defp handshake(token, hostname, port, timeout, state) do
-    with {:ok} <- upgrade_connection(hostname, port, timeout, state),
-         {:ok} <- authenticate(token, timeout, state) do
-      {:ok}
+    with {:ok, state} <- upgrade_connection(hostname, port, timeout, state),
+         {:ok, state} <- authenticate(token, timeout, state) do
+      {:ok, state}
     end
   end
 
-  def valid_websocket?(websocket_accept_header, key) do
+  def valid_websocket_accept?(websocket_accept_header, key) do
     :crypto.hash(:sha, key <> "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
     |> Base.encode64()
     |> String.equivalent?(websocket_accept_header)
