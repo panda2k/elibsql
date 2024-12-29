@@ -37,8 +37,8 @@ jobs:
       - name: run tests
         run: nix develop --command mix test
         env:
-          hostname: ${{ steps.create-database.outputs.hostname }}
-          token: ${{ steps.create-database.outputs.token }}
+          HOSTNAME: ${{ steps.create-database.outputs.hostname }}
+          TOKEN: ${{ steps.create-database.outputs.token }}
       - name: delete database
         if: always()
         uses: ./.github/actions/delete-database
