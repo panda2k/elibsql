@@ -9,8 +9,6 @@ defmodule ElibSQL.Protocol do
     token = Keyword.get(opts, :token, System.get_env("TOKEN")) || raise "token is missing"
     sock_opts = [:binary, active: false, verify: :verify_none]
 
-    :ssl.start()
-
     case :ssl.connect(hostname, port, sock_opts) do
       {:ok, sock} -> handshake(token, hostname, port, timeout, %__MODULE__{sock: sock})
       {:error, _} -> {:error, "failed to open ssl tcp connection"}
@@ -58,6 +56,7 @@ defmodule ElibSQL.Protocol do
       |> :json.decode()
       |> Map.get("type", "")
       |> String.equivalent?("hello_ok")
+    {:ok}
   end
 
   defp handshake(token, hostname, port, timeout, state) do
