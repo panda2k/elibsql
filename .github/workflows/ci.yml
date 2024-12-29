@@ -10,12 +10,16 @@ jobs:
       - uses: cachix/install-nix-action@v27
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: nix develop 
-      - run: nix flake check
-      - run: mix format --check-formatted
+      - name: install flake dependencies
+        run: nix develop && nix flake check
+      - name: install mix dependencies
+        run: nix develop --command mix deps.get
+      - name: lint
+        run: nix develop --command mix format --check-formatted 
   test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: create database
         id: create-database
         uses: ./.github/actions/create-database
@@ -23,14 +27,15 @@ jobs:
           organization_name: ${{ secrets.TURSO_ORGANIZATION_NAME }}
           group_name: ${{ secrets.TURSO_GROUP_NAME }}
           api_token: ${{ secrets.TURSO_API_TOKEN }}
-      - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v27
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: nix develop 
-      - run: nix flake check
+      - name: install flake dependencies
+        run: nix develop && nix flake check
+      - name: install mix dependencies
+        run: nix develop --command mix deps.get
       - name: run tests
-        run: mix test
+        run: nix develop --command mix test
         env:
           hostname: ${{ steps.create-database.outputs.hostname }}
           token: ${{ steps.create-database.outputs.token }}
