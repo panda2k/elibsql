@@ -3,7 +3,7 @@ defmodule ElibSQL do
   Documentation for `ElibSQL`.
   """
 
-  @doc"""
+  @doc """
   Start link
   """
   def start_link(opts) do
