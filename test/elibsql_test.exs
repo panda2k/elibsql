@@ -32,9 +32,9 @@ defmodule ElibSQLTest do
     timeout = 5000
     token = Dotenvy.env!("TOKEN", :string)
 
-    result =
+    {:ok, state} =
       ElibSQL.Protocol.connect(hostname: hostname, token: token, timeout: timeout, port: port)
 
-    assert result == {:ok}
+    assert %ElibSQL.Protocol{} = state
   end
 end
