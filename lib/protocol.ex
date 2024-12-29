@@ -24,8 +24,8 @@ defmodule ElibSQL.Protocol do
       "GET / HTTP/1.1\r\nHost: #{hostname}:#{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: #{socket_key}\r\nSec-WebSocket-Protocol: hrana3\r\nSec-WebSocket-Version: 13\r\n\r\n"
 
     with :ok <- :ssl.send(state.sock, handshake),
-         {:ok, frame_back} <- :ssl.recv(state.sock, 0),
-         decoded_frame = frame_back |> parse_message do
+         {:ok, frame_back} = :ssl.recv(state.sock, 0),
+         {:ok, status_code, headers} <- frame_back |> parse_message |> parse_http do 
     end
   end
 
