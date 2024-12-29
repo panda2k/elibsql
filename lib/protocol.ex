@@ -26,9 +26,9 @@ defmodule ElibSQL.Protocol do
     with :ok <- :ssl.send(state.sock, handshake),
          {:ok, frame_back} = :ssl.recv(state.sock, 0),
          {:ok, 101, headers} <- frame_back |> parse_http,
-         true = Map.get(headers, "Sec-WebSocket-Accept", ""),
-         "websocket" = Map.get(headers, "Upgrade", ""),
-         "Upgrade" = Map.get(headers, "Connection", "")
+         true = Map.get(headers, "sec-websocket-accept", "") |> valid_websocket?(socket_key),
+         "websocket" = Map.get(headers, "upgrade", "") |> String.downcase,
+         "upgrade" = Map.get(headers, "connection", "") |> String.downcase
          do {:ok}
     else
       x -> {:error, x}
@@ -36,7 +36,7 @@ defmodule ElibSQL.Protocol do
   end
 
   defp handshake(token, hostname, port, timeout, state) do
-    with :ok <- upgrade_connection(hostname, port, timeout, state)
+    with {:ok} <- upgrade_connection(hostname, port, timeout, state)
         #  {:ok, frame_back} <- :ssl.recv(state.sock, 0),
         #  decoded_frame = frame_back |> parse_message do
         do {:ok}
@@ -46,7 +46,7 @@ defmodule ElibSQL.Protocol do
   end
 
   def valid_websocket?(websocket_accept_header, key) do
-    :crypto.hash(:sha, (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")) |> Base.encode64() |> String.equivalent?(websocket_accept_header)
+    :crypto.hash(:sha, (key <> "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")) |> Base.encode64() |> String.equivalent?(websocket_accept_header)
   end
 
   @doc false
@@ -62,7 +62,7 @@ defmodule ElibSQL.Protocol do
               |> Enum.reduce_while(%{}, fn x, acc ->
                 case String.split(x, ":", parts: 2) do
                   [""] -> {:halt, acc}
-                  [key, value] -> {:cont, Map.put(acc, key, String.trim(value))}
+                  [key, value] -> {:cont, Map.put(acc, String.downcase(key), String.trim(value))}
                   _ -> {:halt, acc}
                 end
               end)
