@@ -1,6 +1,6 @@
 defmodule ElibSQL.Protocol do
   use DBConnection
-  defstruct [:sock]
+  defstruct [:sock, :timeout]
 
   def connect(opts) do
     hostname = Keyword.get(opts, :hostname, "localhost") |> String.to_charlist()
@@ -10,7 +10,7 @@ defmodule ElibSQL.Protocol do
     sock_opts = [:binary, active: false, verify: :verify_none]
 
     case :ssl.connect(hostname, port, sock_opts) do
-      {:ok, sock} -> handshake(token, hostname, port, timeout, %__MODULE__{sock: sock})
+      {:ok, sock} -> handshake(token, hostname, port, timeout, %__MODULE__{sock: sock, timeout: timeout})
       {:error, _} -> {:error, "failed to open ssl tcp connection"}
     end
   end
@@ -149,4 +149,44 @@ defmodule ElibSQL.Protocol do
 
     <<masking_key::binary, masked_data::binary>>
   end
+
+  def handle_prepare(query, _opts, state) do
+    # open the stream before sending
+    stream_id = :crypto.strong_rand_bytes(4)
+    open_stream =
+      %{
+        "type" => "open_stream",
+        "stream_id" => stream_id
+      }
+      |> :json.encode()
+      |> IO.iodata_to_binary()
+
+    frame =
+      <<1::1, 0::3, 1::4, 1::1, payload_length(open_stream)::bitstring, mask_data(open_stream)::bitstring>>
+
+    with :ok <- :ssl.send(state.sock, frame),
+      {:ok, frame_back} <- :ssl.recv(state.sock, 0, state.timeout),
+      true <- frame_back
+      |> parse_websocket_frame()
+      |> :json.decode()
+      |> Map.get("type", "")
+      |> String.equivalent?("open_stream") ||
+        :invalid_open_stream_response
+      do
+        query = %{query | statement_id: stream_id}
+
+        {:ok, query, state}
+
+    else
+      err -> {:error, err}
+    end
+  end
+
+
+  # def handle_execute() do
+
+  # end
+
+
+
 end
