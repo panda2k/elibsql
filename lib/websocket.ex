@@ -13,7 +13,7 @@ defmodule ElibSQL.Websocket do
   """
 
   @doc """
-  Opens and authenticates a websocket Hrana3 connection 
+  Opens and authenticates a websocket Hrana3 connection
 
   ## Examples
   """
@@ -32,6 +32,21 @@ defmodule ElibSQL.Websocket do
          :ok <- upgrade_connection(state, hostname, port),
          :ok <- authenticate(state, token) do
       {:ok, state}
+    end
+  end
+
+  @doc """
+  Disconnects the websocket connection
+
+  ## Examples
+  """
+  @spec disconnect(state()) :: {:ok, state()} | {:error, any()}
+  def disconnect(state) do
+    with :ok <- send(state, %{}, 8),
+        :ok <- :ssl.close(state.socket) do
+        {:ok, %__MODULE__{socket: nil, timeout: state.timeout}}
+    else
+      err -> err
     end
   end
 

@@ -14,24 +14,40 @@ defmodule ElibSQL.Protocol do
     end
   end
 
-  def ping(_state) do
-    raise "Not implemented"
+  def ping(state) do
+    case ElibSQL.Websocket.ping(state) do
+      :ok -> {:ok, state}
+      {:error, err} -> {:disconnect, err, state}
+    end
   end
 
-  def disconnect(_err, _state) do
-    raise "Not implemented"
+  @spec disconnect(any(), %ElibSQL.Websocket{socket: any(), timeout: :infinity | pos_integer()}) ::
+          :ok
+  def disconnect(_err, state) do
+    ElibSQL.Websocket.disconnect(state)
+    :ok
   end
 
-  def checkout(_state) do
-    raise "Not implemented"
+  def checkout(state) do
+    {:ok, state}
   end
 
   def handle_begin(_opts, _state) do
     raise "Not implemented"
   end
 
-  def handle_close(_query, _opts, _state) do
-    raise "Not implemented"
+  def handle_close(query, _opts, state) do
+    close_stream = %{
+      "type" => "close_stream",
+      "stream_id" => query.statement_id
+    }
+    with :ok <- ElibSQL.Websocket.send(state.websocket, close_stream),
+    {:ok, data} <- ElibSQL.Websocket.recv(state),
+    "close_stream" <- Map.get(data, "type") do
+    {:ok, nil, state}
+    else
+      err -> {:error, err, state}
+    end
   end
 
   def handle_commit(_opts, _state) do
