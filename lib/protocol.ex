@@ -10,8 +10,11 @@ defmodule ElibSQL.Protocol do
     sock_opts = [:binary, active: false, verify: :verify_none]
 
     case :ssl.connect(hostname, port, sock_opts) do
-      {:ok, sock} -> handshake(token, hostname, port, timeout, %__MODULE__{sock: sock, timeout: timeout})
-      {:error, _} -> {:error, "failed to open ssl tcp connection"}
+      {:ok, sock} ->
+        handshake(token, hostname, port, timeout, %__MODULE__{sock: sock, timeout: timeout})
+
+      {:error, _} ->
+        {:error, "failed to open ssl tcp connection"}
     end
   end
 
@@ -153,6 +156,7 @@ defmodule ElibSQL.Protocol do
   def handle_prepare(query, _opts, state) do
     # open the stream before sending
     stream_id = :crypto.strong_rand_bytes(4)
+
     open_stream =
       %{
         "type" => "open_stream",
@@ -162,31 +166,62 @@ defmodule ElibSQL.Protocol do
       |> IO.iodata_to_binary()
 
     frame =
-      <<1::1, 0::3, 1::4, 1::1, payload_length(open_stream)::bitstring, mask_data(open_stream)::bitstring>>
+      <<1::1, 0::3, 1::4, 1::1, payload_length(open_stream)::bitstring,
+        mask_data(open_stream)::bitstring>>
 
     with :ok <- :ssl.send(state.sock, frame),
-      {:ok, frame_back} <- :ssl.recv(state.sock, 0, state.timeout),
-      true <- frame_back
-      |> parse_websocket_frame()
-      |> :json.decode()
-      |> Map.get("type", "")
-      |> String.equivalent?("open_stream") ||
-        :invalid_open_stream_response
-      do
-        query = %{query | statement_id: stream_id}
+         {:ok, frame_back} <- :ssl.recv(state.sock, 0, state.timeout),
+         true <-
+           frame_back
+           |> parse_websocket_frame()
+           |> :json.decode()
+           |> Map.get("type", "")
+           |> String.equivalent?("open_stream") ||
+             :invalid_open_stream_response do
+      query = %{query | statement_id: stream_id}
 
-        {:ok, query, state}
-
+      {:ok, query, state}
     else
       err -> {:error, err}
     end
   end
 
+  def handle_execute(query, params, _opts, state) do
+    # if stream_id good,
+    # encode data to send, stment object looks like {query, params, true}
+    execute_request =
+      %{
+        "type" => "execute",
+        "stream_id" => query.statement_id,
+        "stmt" => %{
+          "sql" => query.statement,
+          "args" => params,
+          "want_rows" => true
+        }
+      }
+      |> :json.encode()
+      |> IO.iodata_to_binary()
 
-  # def handle_execute() do
+    frame =
+      <<1::1, 0::3, 1::4, 1::1, payload_length(execute_request)::bitstring,
+        mask_data(execute_request)::bitstring>>
 
-  # end
-
-
-
+    # %{"result" => result} <- decoded do
+    #   columns = Map.get(result, "columns", [])
+    #   rows = Map.get(result, "rows", [])
+    #   affected_row_count = Map.get(result, "affected_row_count", 0)
+    # {:ok, query, %{affected_row_count: affected_row_count, last_insert_rowid: last_insert_rowid, rows_read: rows_read,
+    #     rows_written: rows_written, query_duration_ms: query_duration_ms},
+    # {rows: rows, columns: columns, state}
+    with :ok <- :ssl.send(state.sock, frame),
+         {:ok, frame_back} <- :ssl.recv(state.sock, 0, state.timeout),
+         response <- parse_websocket_frame(frame_back),
+         {:ok, decoded} <- :json.decode(response),
+         # extract data; if type = response_error, it fails; if type = execute, succeeded
+         "execute" <- Map.get(decoded, "type", "") do
+    else
+      {:error, err} -> {:error, err, state}
+      err -> {:error, "handle_execute failed: #{inspect(err)}", state}
+    end
+  end
 end
