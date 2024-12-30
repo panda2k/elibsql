@@ -14,6 +14,50 @@ defmodule ElibSQL.Protocol do
     end
   end
 
+  def ping(_state) do
+    raise "Not implemented"
+  end
+
+  def disconnect(_err, _state) do
+    raise "Not implemented"
+  end
+
+  def checkout(_state) do
+    raise "Not implemented"
+  end
+
+  def handle_begin(_opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_close(_query, _opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_commit(_opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_deallocate(_query, _cursor, _opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_declare(_query, _params, _opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_fetch(_query, _cursor, _opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_rollback(_opts, _state) do
+    raise "Not implemented"
+  end
+
+  def handle_status(_opts, _state) do
+    raise "Not implemented"
+  end
+
   def handle_prepare(query, _opts, state) do
     # open the stream before sending
     stream_id = :crypto.strong_rand_bytes(4)
@@ -71,11 +115,11 @@ defmodule ElibSQL.Protocol do
            %{
              "cols" => cols,
              "rows" => rows,
-             "affected_row_count" => affected_row_count,
-             "last_insert_rowid" => last_insert_rowid,
-             "rows_read" => rows_read,
-             "rows_written" => rows_written,
-             "query_duration_ms" => query_duration_ms
+             "affected_row_count" => _affected_row_count,
+             "last_insert_rowid" => _last_insert_rowid,
+             "rows_read" => _rows_read,
+             "rows_written" => _rows_written,
+             "query_duration_ms" => _query_duration_ms
            } <-
              Map.get(data, "result") do
         result = %ElibSQL.Result{columns: cols, rows: rows}
