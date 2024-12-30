@@ -2,6 +2,9 @@ defmodule ElibSQL.Websocket do
   @typedoc "A websocket state"
   @type state() :: %__MODULE__{socket: :ssl.sslsocket(), timeout: pos_integer() | :infinity}
 
+  @typedoc "Op codes for websocket frame"
+  @type opcode() :: <<_::4>>
+
   defstruct [:socket, :timeout]
   import Kernel, except: [send: 2]
 
@@ -37,13 +40,13 @@ defmodule ElibSQL.Websocket do
 
   ## Examples
   """
-  @spec send(state(), map()) :: :ok | {:error, any()}
-  def send(state, data) do
+  @spec send(state(), map(), opcode()) :: :ok | {:error, any()}
+  def send(state, data, opcode \\ <<1::4>>) do
     res =
       data
       |> JSON.encode!()
       |> IO.iodata_to_binary()
-      |> binary_to_frame
+      |> binary_to_frame(opcode)
 
     case res do
       {:ok, frame} -> :ssl.send(state.socket, frame)
@@ -70,6 +73,22 @@ defmodule ElibSQL.Websocket do
          {:ok, data_binary} <- parse_frame(response_frame),
          {:ok, data} <- JSON.decode(data_binary) do
       {:ok, data}
+    end
+  end
+
+  @doc """
+  Sends a ping and blocks until a pong
+  """
+  @spec ping(state()) :: :ok | {:error, any()}
+  def ping(state) do
+    message = %{"msg" => "hello"}
+
+    with :ok <- send(state, message, <<9::4>>),
+         {:ok, data} <- recv(state),
+         true <- Map.equal?(data, message) || :invalid_pong_data do
+      :ok
+    else
+      err -> {:error, err}
     end
   end
 
@@ -107,13 +126,14 @@ defmodule ElibSQL.Websocket do
     end
   end
 
-  @spec binary_to_frame(binary()) :: {:ok, binary()} | {:error, :data_too_big}
-  defp binary_to_frame(data) do
+  @spec binary_to_frame(binary(), opcode()) :: {:ok, binary()} | {:error, :data_too_big}
+  defp binary_to_frame(data, opcode) do
     # create the binary frame for the hello message
     # fin bit -> RSVs -> opcode -> masking bit -> 7 + 16 or 64 bits if needed -> mask key -> masked data
     case payload_length(data) do
       {:ok, length} ->
-        {:ok, <<1::1, 0::3, 1::4, 1::1, length::bitstring, mask_data(data)::bitstring>>}
+        {:ok,
+         <<1::1, 0::3, opcode::bitstring, 1::1, length::bitstring, mask_data(data)::bitstring>>}
 
       err ->
         err

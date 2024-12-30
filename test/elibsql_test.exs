@@ -37,4 +37,16 @@ defmodule ElibSQLTest do
 
     assert %ElibSQL.Websocket{} = state
   end
+
+  test "ping works" do
+    Dotenvy.source!([".env", System.get_env()])
+
+    hostname = Dotenvy.env!("HOSTNAME", :string)
+    port = 443
+    timeout = 5000
+    token = Dotenvy.env!("TOKEN", :string)
+
+    {:ok, state} = ElibSQL.Websocket.connect(hostname, port, token, timeout)
+    assert ElibSQL.Websocket.ping(state) == :ok
+  end
 end
