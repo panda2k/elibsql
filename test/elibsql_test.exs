@@ -5,7 +5,7 @@ defmodule ElibSQLTest do
   test "parses invalid HTTP response into error" do
     result =
       "HTTP/1.1 99 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-      |> ElibSQL.Protocol.parse_http()
+      |> ElibSQL.Websocket.parse_http()
 
     assert result == {:error, "found invalid status code 99"}
   end
@@ -13,7 +13,7 @@ defmodule ElibSQLTest do
   test "parses valid HTTP response" do
     result =
       "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"
-      |> ElibSQL.Protocol.parse_http()
+      |> ElibSQL.Websocket.parse_http()
 
     assert result ==
              {:ok, 101,
@@ -33,8 +33,8 @@ defmodule ElibSQLTest do
     token = Dotenvy.env!("TOKEN", :string)
 
     {:ok, state} =
-      ElibSQL.Protocol.connect(hostname: hostname, token: token, timeout: timeout, port: port)
+      ElibSQL.Websocket.connect(hostname, port, token, timeout)
 
-    assert %ElibSQL.Protocol{} = state
+    assert %ElibSQL.Websocket{} = state
   end
 end
