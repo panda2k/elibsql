@@ -42,7 +42,7 @@ defmodule ElibSQL.Protocol do
   end
 
   def handle_execute(
-        %ElibSQL.Query{statement: statement, statement_id: statement_id},
+        query,
         params,
         _opts,
         state
@@ -51,36 +51,39 @@ defmodule ElibSQL.Protocol do
     # encode data to send, stment object looks like {query, params, true}
     execute_statement = %{
       "type" => "execute",
-      "stream_id" => statement_id,
+      "stream_id" => query.statement_id,
       "stmt" => %{
-        "sql" => statement,
+        "sql" => query.statement,
         "args" => params,
         "want_rows" => true
       }
     }
 
-    with :ok <- ElibSQL.Websocket.send(state.websocket, execute_statement),
-         {:ok, data} <- ElibSQL.Websocket.recv(state.websocket),
-         "execute" <- Map.get(data, "type") do
-      {:ok}
-    end
+    close_stream = %{
+      "type" => "close_stream",
+      "stream_id" => query.statement_id
+    }
 
-    # %{"result" => result} <- decoded do
-    #   columns = Map.get(result, "columns", [])
-    #   rows = Map.get(result, "rows", [])
-    #   affected_row_count = Map.get(result, "affected_row_count", 0)
-    # {:ok, query, %{affected_row_count: affected_row_count, last_insert_rowid: last_insert_rowid, rows_read: rows_read,
-    #     rows_written: rows_written, query_duration_ms: query_duration_ms},
-    # {rows: rows, columns: columns, state}
-    # with :ok <- :ssl.send(state.sock, frame),
-    #     {:ok, frame_back} <- :ssl.recv(state.sock, 0, :infinity),
-    #     response <- parse_websocket_frame(frame_back),
-    #     {:ok, decoded} <- :json.decode(response),
-    #     # extract data; if type = response_error, it fails; if type = execute, succeeded
-    #     "execute" <- Map.get(decoded, "type", "") do
-    # else
-    #  {:error, err} -> {:error, err, state}
-    #  err -> {:error, "handle_execute failed: #{inspect(err)}", state}
-    # end
+    res =
+      with :ok <- ElibSQL.Websocket.send(state.websocket, execute_statement),
+           {:ok, data} <- ElibSQL.Websocket.recv(state.websocket),
+           "execute" <- Map.get(data, "type"),
+           %{
+             "cols" => cols,
+             "rows" => rows,
+             "affected_row_count" => affected_row_count,
+             "last_insert_rowid" => last_insert_rowid,
+             "rows_read" => rows_read,
+             "rows_written" => rows_written,
+             "query_duration_ms" => query_duration_ms
+           } <-
+             Map.get(data, "result") do
+        result = %ElibSQL.Result{columns: cols, rows: rows}
+        {:ok, query, result, state}
+      end
+
+    # no matter what happens we need to close stream after execution
+    ElibSQL.Websocket.send(state.websocket, close_stream)
+    res
   end
 end
