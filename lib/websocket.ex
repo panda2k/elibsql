@@ -3,7 +3,7 @@ defmodule ElibSQL.Websocket do
   @type state() :: %__MODULE__{socket: :ssl.sslsocket(), timeout: pos_integer() | :infinity}
 
   @typedoc "Op codes for websocket frame"
-  @type opcode() :: <<_::4>>
+  @type opcode() :: 0..15
 
   defstruct [:socket, :timeout]
   import Kernel, except: [send: 2]
@@ -41,7 +41,7 @@ defmodule ElibSQL.Websocket do
   ## Examples
   """
   @spec send(state(), map(), opcode()) :: :ok | {:error, any()}
-  def send(state, data, opcode \\ <<1::4>>) do
+  def send(state, data, opcode \\ 1) do
     res =
       data
       |> JSON.encode!()
@@ -55,22 +55,18 @@ defmodule ElibSQL.Websocket do
   end
 
   @doc """
-  Recieves a message over the connection using the timeout defined in `state()`
-
-  ## Examples
-  """
-  @spec recv(state()) :: {:ok, map() | list(any())}
-  def recv(state), do: recv(state, state.timeout)
-
-  @doc """
   Sends a message over the connection, overriding the timeout defined in `state()`
 
   ## Examples
   """
-  @spec recv(state(), pos_integer() | :infinity) :: {:ok, map() | list(any())}
-  def recv(state, timeout) do
+  @spec recv(state(), timeout: pos_integer() | :infinity, opcode: opcode()) ::
+          {:ok, map() | list(any())}
+  def recv(state, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, state.timeout)
+    opcode = Keyword.get(opts, :opcode, 1)
+
     with {:ok, response_frame} <- :ssl.recv(state.socket, 0, timeout),
-         {:ok, data_binary} <- parse_frame(response_frame),
+         {:ok, data_binary} <- parse_frame(response_frame, opcode),
          {:ok, data} <- JSON.decode(data_binary) do
       {:ok, data}
     end
@@ -83,8 +79,8 @@ defmodule ElibSQL.Websocket do
   def ping(state) do
     message = %{"msg" => "hello"}
 
-    with :ok <- send(state, message, <<9::4>>),
-         {:ok, data} <- recv(state),
+    with :ok <- send(state, message, 9),
+         {:ok, data} <- recv(state, opcode: 10),
          true <- Map.equal?(data, message) || :invalid_pong_data do
       :ok
     else
@@ -132,8 +128,7 @@ defmodule ElibSQL.Websocket do
     # fin bit -> RSVs -> opcode -> masking bit -> 7 + 16 or 64 bits if needed -> mask key -> masked data
     case payload_length(data) do
       {:ok, length} ->
-        {:ok,
-         <<1::1, 0::3, opcode::bitstring, 1::1, length::bitstring, mask_data(data)::bitstring>>}
+        {:ok, <<1::1, 0::3, opcode::4, 1::1, length::bitstring, mask_data(data)::bitstring>>}
 
       err ->
         err
@@ -172,21 +167,22 @@ defmodule ElibSQL.Websocket do
     end
   end
 
-  @spec parse_frame(bitstring()) :: {:ok, bitstring()} | {:error, any()}
-  defp parse_frame(message) do
-    <<_, second_byte, rest::binary>> = message
+  @spec parse_frame(bitstring(), opcode()) :: {:ok, bitstring()} | {:error, any()}
+  defp parse_frame(message, opcode) do
+    case message do
+      <<1::1, 0::3, ^opcode::4, second_byte, rest::binary>> ->
+        case second_byte do
+          len when len <= 125 ->
+            {:ok, :binary.part(rest, 0, len)}
 
-    case second_byte do
-      len when len <= 125 ->
-        {:ok, :binary.part(rest, 0, len)}
+          len when len == 126 ->
+            <<data_size::binary-size(2), data::binary>> = rest
+            {:ok, :binary.part(data, 0, data_size)}
 
-      len when len == 126 ->
-        <<data_size::binary-size(2), data::binary>> = rest
-        {:ok, :binary.part(data, 0, data_size)}
-
-      len when len == 127 ->
-        <<data_size::binary-size(4), data::binary>> = rest
-        {:ok, :binary.part(data, 0, String.to_integer(data_size))}
+          len when len == 127 ->
+            <<data_size::binary-size(4), data::binary>> = rest
+            {:ok, :binary.part(data, 0, String.to_integer(data_size))}
+        end
 
       _ ->
         {:error, "invalid response"}
