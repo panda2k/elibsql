@@ -43,8 +43,8 @@ defmodule ElibSQL.Websocket do
   @spec disconnect(state()) :: {:ok, state()} | {:error, any()}
   def disconnect(state) do
     with :ok <- send(state, %{}, 8),
-        :ok <- :ssl.close(state.socket) do
-        {:ok, %__MODULE__{socket: nil, timeout: state.timeout}}
+         :ok <- :ssl.close(state.socket) do
+      {:ok, %__MODULE__{socket: nil, timeout: state.timeout}}
     else
       err -> err
     end

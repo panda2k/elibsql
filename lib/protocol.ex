@@ -41,10 +41,11 @@ defmodule ElibSQL.Protocol do
       "type" => "close_stream",
       "stream_id" => query.statement_id
     }
+
     with :ok <- ElibSQL.Websocket.send(state.websocket, close_stream),
-    {:ok, data} <- ElibSQL.Websocket.recv(state),
-    "close_stream" <- Map.get(data, "type") do
-    {:ok, nil, state}
+         {:ok, data} <- ElibSQL.Websocket.recv(state),
+         "close_stream" <- Map.get(data, "type") do
+      {:ok, nil, state}
     else
       err -> {:error, err, state}
     end
