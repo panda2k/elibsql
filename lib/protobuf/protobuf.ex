@@ -99,6 +99,14 @@ defmodule ElibSQL.Protobuf do
 
   def tokenize(input) do
     case input do
+      <<"//", rest::binary>> ->
+        {_, rest} = read_comment("//" <> rest)
+        tokenize(rest)
+
+      <<"/*", rest::binary>> ->
+        {_, rest} = read_comment("/*" <> rest)
+        tokenize(rest)
+
       <<"package", rest::binary>> ->
         raise "Package not supported"
 
@@ -203,27 +211,33 @@ defmodule ElibSQL.Protobuf do
   end
 
   @doc """
-  Reads until the first non comment or empty line and parses out
-  the version. if there is no version specified in that first line,
-  return :proto_2 as defined in spec
+  Parses the tokens for the syntax version. Returns :proto_2 by
+  default if the first token is not :syntax
   """
-  @spec parse_syntax_version(binary()) :: {:proto_2 | :proto_3, binary()}
-  defp parse_syntax_version(contents) do
+  @spec parse_syntax_version([token()]) :: {:proto_2 | :proto_3, [token()]}
+  def parse_syntax_version([:syntax | rest]) do
+    case rest do
+      [:equals, :quote, "proto3", :semi_colon | rest] -> {:proto_3, rest}
+      [:equals, :quote, "proto2", :semi_colon | rest] -> {:proto_2, rest}
+      _ -> raise "Invalid syntax definition"
+    end
   end
+
+  def parse_syntax_version(input), do: {:proto_2, input}
 
   @doc """
   Parses the comment (including the decorators like // or /* */
   and returns the comment as well as the remaining binary
   """
   @spec read_comment(binary()) :: {binary(), binary()}
-  defp read_comment(<<"//", rest::binary>>) do
+  def read_comment(<<"//", rest::binary>>) do
     case String.split(rest, ["\r", "\n"], parts: 2) do
       [comment, rest] -> {"//" <> comment, rest}
       [comment] -> {"//" <> comment, ""}
     end
   end
 
-  defp read_comment(<<"/*", rest::binary>>) do
+  def read_comment(<<"/*", rest::binary>>) do
     case String.split(rest, "*/", parts: 2) do
       [comment, rest] -> {"/*" <> comment <> "*/", rest}
       [comment] -> raise "Unterminated block comment"
