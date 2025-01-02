@@ -1,6 +1,6 @@
 defmodule ElibSQL.Websocket do
   @typedoc "A websocket state"
-  @type state() :: %__MODULE__{socket: :ssl.sslsocket(), timeout: pos_integer() | :infinity}
+  @type t() :: %__MODULE__{socket: :ssl.sslsocket(), timeout: pos_integer() | :infinity}
 
   @typedoc "Op codes for websocket frame"
   @type opcode() :: 0..15
@@ -18,12 +18,12 @@ defmodule ElibSQL.Websocket do
   ## Examples
   """
   @spec connect(String.t(), pos_integer(), binary(), pos_integer() | :infinity) ::
-          {:ok, state()} | {:error, any()}
+          {:ok, t()} | {:error, any()}
   def connect(hostname, port, token, timeout) when is_bitstring(hostname),
     do: connect(to_charlist(hostname), port, token, timeout)
 
   @spec connect(charlist(), pos_integer(), binary(), pos_integer() | :infinity) ::
-          {:ok, state()} | {:error, any()}
+          {:ok, t()} | {:error, any()}
   def connect(hostname, port, token, timeout) do
     sock_opts = [:binary, active: false, verify: :verify_none]
 
@@ -40,7 +40,7 @@ defmodule ElibSQL.Websocket do
 
   ## Examples
   """
-  @spec disconnect(state()) :: {:ok, state()} | {:error, any()}
+  @spec disconnect(t()) :: {:ok, t()} | {:error, any()}
   def disconnect(state) do
     with :ok <- send(state, %{}, 8),
          :ok <- :ssl.close(state.socket) do
@@ -55,7 +55,7 @@ defmodule ElibSQL.Websocket do
 
   ## Examples
   """
-  @spec send(state(), map(), opcode()) :: :ok | {:error, any()}
+  @spec send(t(), map(), opcode()) :: :ok | {:error, any()}
   def send(state, data, opcode \\ 1) do
     res =
       data
@@ -70,11 +70,11 @@ defmodule ElibSQL.Websocket do
   end
 
   @doc """
-  Sends a message over the connection, overriding the timeout defined in `state()`
+  Sends a message over the connection, overriding the timeout defined in `t()`
 
   ## Examples
   """
-  @spec recv(state(), timeout: pos_integer() | :infinity, opcode: opcode()) ::
+  @spec recv(t(), timeout: pos_integer() | :infinity, opcode: opcode()) ::
           {:ok, map() | list(any())}
   def recv(state, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, state.timeout)
@@ -90,7 +90,7 @@ defmodule ElibSQL.Websocket do
   @doc """
   Sends a ping and blocks until a pong
   """
-  @spec ping(state()) :: :ok | {:error, any()}
+  @spec ping(t()) :: :ok | {:error, any()}
   def ping(state) do
     message = %{"msg" => "hello"}
 
@@ -103,7 +103,7 @@ defmodule ElibSQL.Websocket do
     end
   end
 
-  @spec upgrade_connection(state(), charlist(), pos_integer()) :: :ok | {:error, any()}
+  @spec upgrade_connection(t(), charlist(), pos_integer()) :: :ok | {:error, any()}
   defp upgrade_connection(state, hostname, port) do
     socket_key = :crypto.strong_rand_bytes(16) |> Base.encode64()
 
@@ -126,7 +126,7 @@ defmodule ElibSQL.Websocket do
     end
   end
 
-  @spec authenticate(state(), binary()) :: :ok | {:error, any()}
+  @spec authenticate(t(), binary()) :: :ok | {:error, any()}
   defp authenticate(state, token) do
     with :ok <- send(state, %{"type" => "hello", "jwt" => token}),
          {:ok, data} <- recv(state),
