@@ -292,7 +292,7 @@ defmodule ElibSQL.Protobuf do
     parse_message_body(rest, message)
   end
 
-  defp parse_message_body([t | rest], message) when t == :close_brace, do: {rest, message}
+  defp parse_message_body([:close_brace | rest], message), do: {rest, message}
 
   defp parse_message_body(
          [
@@ -480,6 +480,12 @@ defmodule ElibSQL.Protobuf do
 
       <<",", rest::binary>> ->
         [:comma | tokenize(rest)]
+
+      <<"<", rest::binary>> ->
+        [:open_angle | tokenize(rest)]
+
+      <<">", rest::binary>> ->
+        [:close_angle | tokenize(rest)]
 
       <<"double", rest::binary>> ->
         [:double | tokenize(rest)]
