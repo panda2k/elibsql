@@ -220,13 +220,16 @@ defmodule ElibSQL.Protobuf do
         if acc != nil, do: {:cont, Map.get(acc.messages, x)}, else: {:halt, acc}
       end)
 
-    if definition != nil, do: definition, else: find_definition([top_identifier | rest_identifier], rest_scope)
+    if definition != nil,
+      do: definition,
+      else: find_definition([top_identifier | rest_identifier], rest_scope)
   end
 
   @spec traverse_message_tree(message(), [%{binary() => message()}]) :: boolean()
   def traverse_message_tree(root, scope_stack) do
     scope_stack = [root.messages | scope_stack]
     messages = Map.values(root.messages)
+
     with true <-
            Enum.all?(messages, fn m ->
              m.fields
