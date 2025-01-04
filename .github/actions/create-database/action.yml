@@ -28,7 +28,7 @@ runs:
       id: create-database
       shell: bash
       run: |
-        DATABASE_NAME=$(echo "${{ github.ref_name }}" |  sed 's|/|-|g')
+        DATABASE_NAME=$(echo "${{ github.ref_name }}" | sed 's|/|-|g')-$(echo "${{ github.sha }}" | cut -c1-7)
         RESPONSE=$(curl -s -f -X POST \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -H "Content-Type: application/json" \
