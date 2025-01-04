@@ -27,7 +27,7 @@ defmodule ElibSQLTest do
     contents =
       "message ClientMsg {\n  oneof msg {\n    HelloMsg hello = 1;\n    RequestMsg request = 2;\n  }\n}\n\n"
 
-    tokens = ElibSQL.Protobuf.tokenize(contents)
+    tokens = ElibSQL.Protobuf.Parser.tokenize(contents)
 
     expected = [
       :message,
@@ -57,7 +57,7 @@ defmodule ElibSQLTest do
     contents =
       "//hello this is a comment\n/*\n now a block comment \n*/message ClientMsg {\n  oneof msg {\n    HelloMsg hello = 1;\n    RequestMsg request = 2;\n  }\n}\n\n"
 
-    tokens = ElibSQL.Protobuf.tokenize(contents)
+    tokens = ElibSQL.Protobuf.Parser.tokenize(contents)
 
     expected = [
       :message,
