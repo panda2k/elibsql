@@ -458,6 +458,10 @@ defmodule ElibSQL.Protobuf do
       type: data_type
     }
 
+    if Map.has_key?(message.fields, field_number) do
+      raise "Duplicate field number #{field_number} in #{message.name}"
+    end
+
     message = Map.put(message, :fields, Map.put(message.fields, field_number, field))
     parse_message_body(rest, message)
   end
@@ -476,6 +480,10 @@ defmodule ElibSQL.Protobuf do
       type: data_type
     }
 
+    if Map.has_key?(message.fields, field_number) do
+      raise "Duplicate field number #{field_number} in #{message.name}"
+    end
+
     message = Map.put(message, :fields, Map.put(message.fields, field_number, field))
     parse_message_body(rest, message)
   end
@@ -492,6 +500,11 @@ defmodule ElibSQL.Protobuf do
     }
 
     {rest, nested_message} = parse_message_body(rest, nested_message)
+
+    if Map.has_key?(message.messages, message_name) do
+      raise "Duplicate nested message #{message_name} in #{message.name}"
+    end
+
     message = Map.put(message, :messages, Map.put(message.messages, message_name, nested_message))
     parse_message_body(rest, message)
   end
