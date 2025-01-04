@@ -51,7 +51,7 @@ runs:
       id: create-token
       shell: bash
       run: |
-        DATABASE_NAME=$(echo "${{ github.ref_name }}" |  sed 's|/|-|g')
+        DATABASE_NAME=$(echo "${{ github.ref_name }}" | sed 's|/|-|g')-$(echo "${{ github.sha }}" | cut -c1-7)
         if [ -z "${{ inputs.group_name }}" ]; then
           GROUP_TO_USE=$GROUP_NAME
         else
