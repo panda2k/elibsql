@@ -320,7 +320,7 @@ defmodule ElibSQL.Protobuf do
       reserved_numbers: MapSet.new()
     }
 
-    traverse_message_tree(dummy_root, [])
+    Kernel.map_size(message_dict) == Enum.count(messages) && traverse_message_tree(dummy_root, [])
   end
 
   @doc """
