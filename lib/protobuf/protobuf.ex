@@ -200,9 +200,124 @@ defmodule ElibSQL.Protobuf do
     with {:ok, contents} <- File.read(path),
          tokens <- tokenize(contents),
          {:proto_3, tokens} <- parse_syntax_version(tokens),
-         messages <- parse_tokens(tokens) do
-      %__MODULE__{messages: messages}
+         messages <- parse_tokens(tokens),
+         true <- messages_valid?(messages) do
+      %__MODULE__{
+        messages: messages |> Enum.reduce(%{}, fn m, acc -> Map.put(acc, m.name, m) end)
+      }
     end
+  end
+
+  @spec find_definition([binary()], [%{binary() => message()}]) :: message() | nil
+  def find_definition(["" | rest], scope_stack),
+    do: find_definition(rest, Enum.reverse(scope_stack))
+
+  def find_definition(_type, scope_stack) when scope_stack == [], do: nil
+
+  def find_definition([top_identifier | rest_identifier], [top_scope | rest_scope]) do
+    definition =
+      Enum.reduce_while(rest_identifier, Map.get(top_scope, top_identifier), fn x, acc ->
+        if acc != nil, do: {:cont, Map.get(acc.messages, x)}, else: {:halt, acc}
+      end)
+
+    if definition != nil, do: definition, else: find_definition([top_identifier | rest_identifier], rest_scope)
+  end
+
+  @spec traverse_message_tree(message(), [%{binary() => message()}]) :: boolean()
+  def traverse_message_tree(root, scope_stack) do
+    scope_stack = [root.messages | scope_stack]
+    messages = Map.values(root.messages)
+    with true <-
+           Enum.all?(messages, fn m ->
+             m.fields
+             |> Map.values()
+             |> Enum.map(fn f -> f.type end)
+             |> Enum.filter(&Kernel.is_binary/1)
+             |> Enum.map(fn type -> String.split(type, ".") end)
+             |> Enum.all?(fn type -> find_definition(type, [m.messages | scope_stack]) != nil end)
+           end) || :undefined_field,
+
+         # make sure no oneof groups specify overlapping field numbers
+         true <-
+           Enum.all?(messages, fn m ->
+             intersection_count =
+               m.oneof_groups
+               |> Map.values()
+               |> Enum.reduce(MapSet.new(), fn g, acc -> MapSet.intersection(acc, g) end)
+               |> MapSet.size()
+
+             intersection_count == 0
+           end) || :overlapping_oneof_field_numbers,
+
+         # make sure that no field numbers fall into the reserved field numbers
+         # specified in the message
+         true <-
+           Enum.all?(messages, fn m ->
+             intersection_count =
+               m.fields
+               |> Map.keys()
+               |> MapSet.new()
+               |> MapSet.intersection(m.reserved_numbers)
+               |> MapSet.size()
+
+             intersection_count == 0
+           end) || :using_reserved_field_number,
+
+         # make sure that no field names fall into the reserved field names
+         true <-
+           Enum.all?(messages, fn m ->
+             intersection_count =
+               m.fields
+               |> Map.values()
+               |> Enum.map(fn f -> f.name end)
+               |> MapSet.new()
+               |> MapSet.intersection(m.reserved_names)
+               |> MapSet.size()
+
+             intersection_count == 0
+           end) || :using_reserved_field_name,
+
+         # make sure that no field names are the same within a message
+         true <-
+           Enum.all?(messages, fn m ->
+             unique_fields =
+               m.fields
+               |> Map.values()
+               |> Enum.map(fn f -> f.name end)
+               |> MapSet.new()
+               |> MapSet.size()
+
+             total_fields = m.fields |> Map.values() |> Enum.count()
+             total_fields == unique_fields
+           end) || :duplicate_field_name,
+         # now validate all child messages
+         true <-
+           Enum.all?(messages, fn m ->
+             traverse_message_tree(m, scope_stack)
+           end) do
+      true
+    else
+      x -> {x, false}
+    end
+  end
+
+  @doc """
+  Validates a set of messages to ensure all of them are valid
+  """
+  @spec messages_valid?([message()]) :: boolean()
+  def messages_valid?(messages) do
+    message_dict = messages |> Enum.reduce(%{}, fn m, acc -> Map.put(acc, m.name, m) end)
+
+    dummy_root = %{
+      name: nil,
+      fields: %{},
+      messages: message_dict,
+      oneof_groups: %{},
+      reserved_names: MapSet.new(),
+      reserved_numbers: MapSet.new()
+    }
+
+    traverse_message_tree(dummy_root, [])
   end
 
   @doc """
@@ -239,9 +354,13 @@ defmodule ElibSQL.Protobuf do
     end
   end
 
+  @doc """
+  Parse the body of a message. Must run this function after consuming 
+  :message, identifier, :open_brace
+  """
   @spec parse_message_body([token()], message()) :: {[token()], message()}
-  defp parse_message_body([:oneof, identifier, :open_brace | rest], message)
-       when Kernel.is_binary(identifier) do
+  def parse_message_body([:oneof, identifier, :open_brace | rest], message)
+      when Kernel.is_binary(identifier) do
     if Map.has_key?(message.oneof_groups, identifier) do
       raise "oneof groups cannot share the same name. multiple defined with name #{identifier}"
     end
@@ -292,25 +411,25 @@ defmodule ElibSQL.Protobuf do
     parse_message_body(rest, message)
   end
 
-  defp parse_message_body([:close_brace | rest], message), do: {rest, message}
+  def parse_message_body([:close_brace | rest], message), do: {rest, message}
 
-  defp parse_message_body(
-         [
-           :map,
-           :open_angle,
-           key_type,
-           :comma,
-           value_type,
-           :close_angle,
-           field_name,
-           :equals,
-           field_number,
-           :semi_colon | rest
-         ],
-         message
-       )
-       when is_map_key(key_type) and is_proto_type(value_type) and is_identifier(field_name) and
-              is_field_number(field_number) do
+  def parse_message_body(
+        [
+          :map,
+          :open_angle,
+          key_type,
+          :comma,
+          value_type,
+          :close_angle,
+          field_name,
+          :equals,
+          field_number,
+          :semi_colon | rest
+        ],
+        message
+      )
+      when is_map_key(key_type) and is_proto_type(value_type) and is_identifier(field_name) and
+             is_field_number(field_number) do
     field = %{
       cardinality: :map,
       name: "#{field_name}",
@@ -322,12 +441,12 @@ defmodule ElibSQL.Protobuf do
     parse_message_body(rest, message)
   end
 
-  defp parse_message_body(
-         [cardinality, data_type, field_name, :equals, field_number, :semi_colon | rest],
-         message
-       )
-       when is_proto_type(data_type) and is_cardinality(cardinality) and is_identifier(field_name) and
-              is_field_number(field_number) do
+  def parse_message_body(
+        [cardinality, data_type, field_name, :equals, field_number, :semi_colon | rest],
+        message
+      )
+      when is_proto_type(data_type) and is_cardinality(cardinality) and is_identifier(field_name) and
+             is_field_number(field_number) do
     # the name could be an atom if it is a protected word (don't ask why those are allowed)
     field = %{
       cardinality: cardinality,
@@ -340,12 +459,12 @@ defmodule ElibSQL.Protobuf do
     parse_message_body(rest, message)
   end
 
-  defp parse_message_body(
-         [data_type, field_name, :equals, field_number, :semi_colon | rest],
-         message
-       )
-       when is_proto_type(data_type) and is_identifier(field_name) and
-              is_field_number(field_number) do
+  def parse_message_body(
+        [data_type, field_name, :equals, field_number, :semi_colon | rest],
+        message
+      )
+      when is_proto_type(data_type) and is_identifier(field_name) and
+             is_field_number(field_number) do
     # the name could be an atom if it is a protected word (don't ask why those are allowed)
     field = %{
       cardinality: :optional,
@@ -358,8 +477,8 @@ defmodule ElibSQL.Protobuf do
     parse_message_body(rest, message)
   end
 
-  defp parse_message_body([:message, message_name, :open_brace | rest], message)
-       when Kernel.is_binary(message_name) do
+  def parse_message_body([:message, message_name, :open_brace | rest], message)
+      when Kernel.is_binary(message_name) do
     nested_message = %{
       name: message_name,
       fields: %{},
@@ -374,7 +493,7 @@ defmodule ElibSQL.Protobuf do
     parse_message_body(rest, message)
   end
 
-  defp parse_message_body([:reserved | rest], message) do
+  def parse_message_body([:reserved | rest], message) do
     {rest, constants} = parse_constant_list(rest)
 
     message =
