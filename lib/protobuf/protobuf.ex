@@ -52,7 +52,8 @@ defmodule ElibSQL.Protobuf do
           cardinality: cardinality(),
           name: binary(),
           field_number: field_number(),
-          type: proto_type() | binary() | {proto_integer_or_string(), proto_type() | binary()}
+          type: proto_type() | binary() | {proto_integer_or_string(), proto_type() | binary()},
+          oneof_group: binary() | nil
         }
 
   @typedoc "Arbitrary message"
@@ -225,8 +226,12 @@ defmodule ElibSQL.Protobuf do
       else: find_definition([top_identifier | rest_identifier], rest_scope)
   end
 
-  @spec traverse_message_tree(message(), [%{binary() => message()}]) :: boolean()
-  def traverse_message_tree(root, scope_stack) do
+  @doc """
+  Traverses a message tree where every message is considered
+  a node. It validates every submessage within the node, aka all root.messages
+  """
+  @spec validate_message_tree(message(), [%{binary() => message()}]) :: boolean()
+  def validate_message_tree(root, scope_stack) do
     scope_stack = [root.messages | scope_stack]
     messages = Map.values(root.messages)
 
@@ -234,7 +239,14 @@ defmodule ElibSQL.Protobuf do
            Enum.all?(messages, fn m ->
              m.fields
              |> Map.values()
-             |> Enum.map(fn f -> f.type end)
+             |> Enum.map(fn f ->
+               case f.type do
+                 # key type can't be a message so we can ignore it, it is valid
+                 # already
+                 {_key_type, value_type} -> value_type
+                 type -> type
+               end
+             end)
              |> Enum.filter(&Kernel.is_binary/1)
              |> Enum.map(fn type -> String.split(type, ".") end)
              |> Enum.all?(fn type -> find_definition(type, [m.messages | scope_stack]) != nil end)
@@ -295,9 +307,7 @@ defmodule ElibSQL.Protobuf do
            end) || :duplicate_field_name,
          # now validate all child messages
          true <-
-           Enum.all?(messages, fn m ->
-             traverse_message_tree(m, scope_stack)
-           end) do
+           Enum.all?(messages, fn m -> validate_message_tree(m, scope_stack) end) do
       true
     else
       x -> {x, false}
@@ -320,7 +330,7 @@ defmodule ElibSQL.Protobuf do
       reserved_numbers: MapSet.new()
     }
 
-    Kernel.map_size(message_dict) == Enum.count(messages) && traverse_message_tree(dummy_root, [])
+    Kernel.map_size(message_dict) == Enum.count(messages) && validate_message_tree(dummy_root, [])
   end
 
   @doc """
@@ -402,7 +412,13 @@ defmodule ElibSQL.Protobuf do
         nil
     end
 
-    message = Map.put(message, :fields, Map.merge(message.fields, nested_message.fields))
+    fields =
+      nested_message.fields
+      |> Map.values()
+      |> Enum.map(fn f -> Map.put(f, :oneof_group, identifier) end)
+      |> Enum.reduce(%{}, fn f, acc -> Map.put(acc, f.field_number, f) end)
+
+    message = Map.put(message, :fields, Map.merge(message.fields, fields))
 
     message =
       Map.put(
@@ -437,7 +453,8 @@ defmodule ElibSQL.Protobuf do
       cardinality: :map,
       name: "#{field_name}",
       field_number: field_number,
-      type: {key_type, value_type}
+      type: {key_type, value_type},
+      oneof_group: nil
     }
 
     message = Map.put(message, :fields, Map.put(message.fields, field_number, field))
@@ -455,7 +472,8 @@ defmodule ElibSQL.Protobuf do
       cardinality: cardinality,
       name: "#{field_name}",
       field_number: field_number,
-      type: data_type
+      type: data_type,
+      oneof_group: nil
     }
 
     if Map.has_key?(message.fields, field_number) do
@@ -477,7 +495,8 @@ defmodule ElibSQL.Protobuf do
       cardinality: :optional,
       name: "#{field_name}",
       field_number: field_number,
-      type: data_type
+      type: data_type,
+      oneof_group: nil
     }
 
     if Map.has_key?(message.fields, field_number) do
