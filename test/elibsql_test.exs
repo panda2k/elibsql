@@ -84,7 +84,7 @@ defmodule ElibSQLTest do
   end
 
   test "decode varint" do
-    input = << 0x96, 0x1 >> 
+    input = <<0x96, 0x1>>
     assert ElibSQL.Protobuf.decode_varint(input) == {:ok, <<2, 22::6>>, <<>>}
   end
 
