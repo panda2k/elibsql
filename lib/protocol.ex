@@ -59,8 +59,38 @@ defmodule ElibSQL.Protocol do
     raise "Not implemented"
   end
 
-  def handle_declare(_query, _params, _opts, _state) do
-    raise "Not implemented"
+  def handle_declare(query, params, _opts, state) do
+    cursor_id = :crypto.strong_rand_bytes(4)
+    
+    batch = %{
+      "steps" => [
+        %{
+          "condition" => nil,
+          "stmt" => %{
+            "sql" => query.statement,
+            "args" => params,
+            "want_rows" => true
+          }
+        }
+      ]
+    }
+  
+    open_cursor = %{
+      "type" => "open_cursor",
+      "stream_id" => query.statement_id,
+      "cursor_id" => cursor_id,
+      "batch" => batch
+    }
+  
+    with :ok <- ElibSQL.Websocket.send(state.websocket, open_cursor),
+         {:ok, data} <- ElibSQL.Websocket.recv(state.websocket),
+         "open_cursor" <- Map.get(data, "type") do
+      cursor = %{cursor_id: cursor_id}
+      {:ok, query, cursor, state}
+    else
+      {:error, reason} -> {:disconnect, reason, state}
+      err -> {:error, err, state} # ?
+    end
   end
 
   def handle_fetch(_query, _cursor, _opts, _state) do
