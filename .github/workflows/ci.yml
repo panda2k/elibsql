@@ -2,6 +2,9 @@ name: ci
 
 on: [push]
 
+env: 
+  NIXPKGS_ALLOW_UNFREE: 1
+
 jobs: 
   lint:
     runs-on: ubuntu-latest 
@@ -12,8 +15,6 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: install flake dependencies
         run: nix develop --impure && nix flake check
-        env: 
-          NIXPKGS_ALLOW_UNFREE: 1
       - name: install mix dependencies
         run: nix develop --command mix deps.get
       - name: lint
@@ -34,8 +35,6 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: install flake dependencies
         run: nix develop --impure && nix flake check
-        env: 
-          NIXPKGS_ALLOW_UNFREE: 1
       - name: install mix dependencies
         run: nix develop --command mix deps.get
       - name: run tests
