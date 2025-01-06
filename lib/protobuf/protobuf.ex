@@ -29,7 +29,10 @@ defmodule ElibSQL.Protobuf do
   Decodes a binary to extract the first varint (returning it in 
   big endian) and also returns the remaining binary
   """
-  @spec decode_varint(binary()) :: {:ok, bitstring(), binary()} | {:err, any()}
+  @spec decode_varint(binary()) :: {:ok, bitstring(), binary()} | {:err, atom()}
+  def decode_varint(<<>>, acc), do: {:error, :binary_unexpectedly_terminated}
+  
+
   def decode_varint(<<0::1, data::bits-size(7), rest::binary>>, acc) do
     {:ok, <<data::bitstring, acc::bitstring>>, rest}
   end
