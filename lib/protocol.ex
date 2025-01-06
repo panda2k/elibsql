@@ -59,8 +59,39 @@ defmodule ElibSQL.Protocol do
     raise "Not implemented"
   end
 
-  def handle_declare(_query, _params, _opts, _state) do
-    raise "Not implemented"
+  def handle_declare(query, params, _opts, state) do
+    cursor_id = :crypto.strong_rand_bytes(4)
+
+    batch = %{
+      "steps" => [
+        %{
+          "condition" => nil,
+          "stmt" => %{
+            "sql" => query.statement,
+            "args" => params,
+            "want_rows" => true
+          }
+        }
+      ]
+    }
+
+    open_cursor = %{
+      "type" => "open_cursor",
+      "stream_id" => query.statement_id,
+      "cursor_id" => cursor_id,
+      "batch" => batch
+    }
+
+    with :ok <- ElibSQL.Websocket.send(state.websocket, open_cursor),
+         {:ok, data} <- ElibSQL.Websocket.recv(state.websocket),
+         "open_cursor" <- Map.get(data, "type") do
+      cursor = %{cursor_id: cursor_id}
+      {:ok, query, cursor, state}
+    else
+      {:error, reason} -> {:disconnect, reason, state}
+      # ?
+      err -> {:error, err, state}
+    end
   end
 
   def handle_fetch(_query, _cursor, _opts, _state) do
@@ -77,22 +108,25 @@ defmodule ElibSQL.Protocol do
 
   def handle_prepare(query, _opts, state) do
     # open the stream before sending
-    stream_id = :crypto.strong_rand_bytes(4)
 
-    open_stream = %{
-      "type" => "open_stream",
-      "stream_id" => stream_id
+    open_stream_req = %{
+      type: "open_stream",
+      stream_id: random_id()
     }
 
-    close_stream = %{
-      "type" => "close_stream",
-      "stream_id" => stream_id
+    open_stream = create_request(open_stream_req)
+
+    close_stream_req = %{
+      type: "close_stream",
+      stream_id: open_stream_req.stream_id
     }
+
+    close_stream = create_request(close_stream_req)
 
     with :ok <- ElibSQL.Websocket.send(state.websocket, open_stream),
          {:ok, data} <- ElibSQL.Websocket.recv(state.websocket),
-         "open_stream" <- data |> Map.get("type") || :invalid_open_stream_response do
-      query = %{query | statement_id: stream_id}
+         "response_ok" <- data |> Map.get("type") || :invalid_open_stream_response do
+      query = %{query | statement_id: open_stream_req.stream_id}
       {:ok, query, state}
     else
       err ->
@@ -108,27 +142,46 @@ defmodule ElibSQL.Protocol do
         _opts,
         state
       ) do
-    # if stream_id good,
-    # encode data to send, stment object looks like {query, params, true}
-    execute_statement = %{
-      "type" => "execute",
-      "stream_id" => query.statement_id,
-      "stmt" => %{
-        "sql" => query.statement,
-        "args" => params,
-        "want_rows" => true
-      }
-    }
+    tagged_params =
+      Enum.map(params, fn x ->
+        case x do
+          nil ->
+            %{type: "null"}
 
-    close_stream = %{
-      "type" => "close_stream",
-      "stream_id" => query.statement_id
-    }
+          x when Kernel.is_integer(x) ->
+            %{type: "integer", value: Integer.to_string(x)}
+
+          x when Kernel.is_float(x) ->
+            %{type: "float", value: x}
+
+          x when Kernel.is_binary(x) ->
+            %{type: "text", value: x}
+            # x when Kernel.is_bitstring(x) -> %{type: "blob", base64: x} 
+        end
+      end)
+
+    execute_statement =
+      create_request(%{
+        "type" => "execute",
+        "stream_id" => query.statement_id,
+        "stmt" => %{
+          "sql" => query.statement,
+          "args" => tagged_params,
+          "want_rows" => true
+        }
+      })
+
+    close_stream =
+      create_request(%{
+        "type" => "close_stream",
+        "stream_id" => query.statement_id
+      })
 
     res =
       with :ok <- ElibSQL.Websocket.send(state.websocket, execute_statement),
            {:ok, data} <- ElibSQL.Websocket.recv(state.websocket),
-           "execute" <- Map.get(data, "type"),
+           "response_ok" <- Map.get(data, "type"),
+           data <- Map.get(data, "response"),
            %{
              "cols" => cols,
              "rows" => rows,
@@ -146,5 +199,18 @@ defmodule ElibSQL.Protocol do
     # no matter what happens we need to close stream after execution
     ElibSQL.Websocket.send(state.websocket, close_stream)
     res
+  end
+
+  defp create_request(request) do
+    %{
+      type: "request",
+      request_id: random_id(),
+      request: request
+    }
+  end
+
+  defp random_id() do
+    <<id::32-signed>> = :crypto.strong_rand_bytes(4)
+    id
   end
 end

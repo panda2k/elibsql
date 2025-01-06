@@ -183,21 +183,42 @@ defmodule ElibSQL.Websocket do
   end
 
   @spec parse_frame(bitstring(), opcode()) :: {:ok, bitstring()} | {:error, any()}
-  defp parse_frame(message, opcode) do
+  defp parse_frame(message, expected_opcode) do
     case message do
-      <<1::1, 0::3, ^opcode::4, second_byte, rest::binary>> ->
-        case second_byte do
-          len when len <= 125 ->
-            {:ok, :binary.part(rest, 0, len)}
+      <<1::1, 0::3, ^expected_opcode::4, second_byte, rest::binary>> ->
+        data =
+          case second_byte do
+            len when len <= 125 ->
+              :binary.part(rest, 0, len)
 
-          len when len == 126 ->
-            <<data_size::binary-size(2), data::binary>> = rest
-            {:ok, :binary.part(data, 0, data_size)}
+            len when len == 126 ->
+              <<data_size::16, data::binary>> = rest
+              :binary.part(data, 0, data_size)
 
-          len when len == 127 ->
-            <<data_size::binary-size(4), data::binary>> = rest
-            {:ok, :binary.part(data, 0, String.to_integer(data_size))}
-        end
+            len when len == 127 ->
+              <<data_size::32, data::binary>> = rest
+              :binary.part(data, 0, data_size)
+          end
+
+        {:ok, data}
+
+      <<1::1, 0::3, opcode::4, second_byte, rest::binary>> ->
+        data =
+          case second_byte do
+            len when len <= 125 ->
+              :binary.part(rest, 0, len)
+
+            len when len == 126 ->
+              <<data_size::16, data::binary>> = rest
+              :binary.part(data, 0, data_size)
+
+            len when len == 127 ->
+              <<data_size::32, data::binary>> = rest
+              :binary.part(data, 0, data_size)
+          end
+
+        {:error,
+         "Recieved unexpected opcode #{opcode}. Message contained data #{inspect(data, binaries: :as_strings)}"}
 
       _ ->
         {:error, "invalid response"}

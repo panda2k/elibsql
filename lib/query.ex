@@ -1,4 +1,8 @@
 defmodule ElibSQL.Query do
+  @type t() :: %__MODULE__{
+          statement: binary(),
+          statement_id: integer()
+        }
   defstruct [:statement, :statement_id]
 
   defimpl DBConnection.Query do
