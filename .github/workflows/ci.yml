@@ -11,7 +11,9 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: install flake dependencies
-        run: export NIXPKGS_ALLOW_UNFREE=1 && nix develop --impure && nix flake check
+        run: nix develop --impure && nix flake check
+        env: 
+          NIXPKGS_ALLOW_UNFREE: 1
       - name: install mix dependencies
         run: nix develop --command mix deps.get
       - name: lint
@@ -31,7 +33,9 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: install flake dependencies
-        run: export NIXPKGS_ALLOW_UNFREE=1 && nix develop --impure && nix flake check
+        run: nix develop --impure && nix flake check
+        env: 
+          NIXPKGS_ALLOW_UNFREE: 1
       - name: install mix dependencies
         run: nix develop --command mix deps.get
       - name: run tests
