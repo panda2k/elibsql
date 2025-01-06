@@ -16,9 +16,9 @@ jobs:
       - name: install flake dependencies
         run: nix develop --impure && nix flake check
       - name: install mix dependencies
-        run: nix develop --command mix deps.get
+        run: nix develop --impure --command mix deps.get
       - name: lint
-        run: nix develop --command mix format --check-formatted 
+        run: nix develop --impure --command mix format --check-formatted 
   test:
     runs-on: ubuntu-latest
     steps:
@@ -36,9 +36,9 @@ jobs:
       - name: install flake dependencies
         run: nix develop --impure && nix flake check
       - name: install mix dependencies
-        run: nix develop --command mix deps.get
+        run: nix develop --impure --command mix deps.get
       - name: run tests
-        run: nix develop --command mix test
+        run: nix develop --impure --command mix test
         env:
           HOSTNAME: ${{ steps.create-database.outputs.hostname }}
           TOKEN: ${{ steps.create-database.outputs.token }}
