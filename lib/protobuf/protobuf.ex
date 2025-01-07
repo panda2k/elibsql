@@ -31,7 +31,6 @@ defmodule ElibSQL.Protobuf do
   """
   @spec decode_varint(binary()) :: {:ok, bitstring(), binary()} | {:err, atom()}
   def decode_varint(<<>>, acc), do: {:error, :binary_unexpectedly_terminated}
-  
 
   def decode_varint(<<0::1, data::bits-size(7), rest::binary>>, acc) do
     {:ok, <<data::bitstring, acc::bitstring>>, rest}
